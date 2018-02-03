@@ -1,0 +1,133 @@
+
+# coding: utf-8
+
+# In[74]:
+
+
+import keras
+import wget as wg
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Setting seed for reproducability
+np.random.seed(1234)  
+PYTHONHASHSEED = 0
+from sklearn import preprocessing
+from sklearn.metrics import confusion_matrix, recall_score, precision_score
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, LSTM, Activation
+get_ipython().run_line_magic('matplotlib', 'inline')
+
+
+# In[75]:
+
+
+X=pd.read_csv('~/Desktop/ML/ten_machines_X.csv')
+X.iloc[0:3]
+
+
+# In[76]:
+
+
+sequence_length=10
+
+def gen_sequence(id_df, seq_length, seq_cols):
+    data_array = id_df[seq_cols].values
+    num_elements = data_array.shape[0] #number of rows
+    for start, stop in zip(range(0, num_elements-seq_length), range(seq_length, num_elements)):
+        yield data_array[start:stop, :]
+   
+
+
+# In[77]:
+
+
+sequence_cols = ['s1','s2']
+# generator for the sequences
+
+seq_gen = (list(gen_sequence(X[X['id']==id], sequence_length, sequence_cols)) 
+           for id in X['id'].unique())
+
+seq_array = np.concatenate(list(seq_gen)).astype(np.float32)
+seq_array.shape
+
+
+# In[78]:
+
+
+seq_array
+
+
+# In[79]:
+
+
+def gen_labels(id_df, seq_length, label):
+    data_array = id_df[label].values
+    num_elements = data_array.shape[0]
+    return data_array[seq_length:num_elements, :]
+
+
+# In[80]:
+
+
+# generate labels
+label_gen = [gen_labels(X[X['id']==id], sequence_length, ['label1']) 
+             for id in X['id'].unique()]
+label_array = np.concatenate(label_gen).astype(np.float32)
+
+
+# In[81]:
+
+
+nb_features = seq_array.shape[2]
+nb_out = label_array.shape[1]
+
+model = Sequential()
+
+model.add(LSTM(
+         input_shape=(sequence_length, nb_features),
+         units=5,
+         return_sequences=True))
+model.add(Dropout(0.2))
+
+model.add(LSTM(
+          units=10,
+          return_sequences=False))
+model.add(Dropout(0.2))
+
+model.add(Dense(units=nb_out, activation='sigmoid'))
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+
+# In[82]:
+
+
+print(model.summary())
+
+
+# In[83]:
+
+
+model.fit(seq_array, label_array, epochs=10, batch_size=1, validation_split=0.05, verbose=1,
+          callbacks = [keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=0, verbose=0, mode='auto')])
+
+
+# In[84]:
+
+
+# training metrics
+scores = model.evaluate(seq_array, label_array, verbose=1, batch_size=200)
+print('Accurracy: {}'.format(scores[1]))
+
+
+# In[85]:
+
+
+# make predictions and compute confusion matrix
+y_pred = model.predict_classes(seq_array,verbose=1, batch_size=1)
+y_true = label_array
+print('Confusion matrix\n- x-axis is true labels.\n- y-axis is predicted labels')
+cm = confusion_matrix(y_true, y_pred)
+cm
+
